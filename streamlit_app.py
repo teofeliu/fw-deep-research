@@ -12,6 +12,7 @@ from research.research_refiner import ResearchRefiner
 from research.report_generator import ReportGenerator
 from models.model_interface import ModelInterface
 from config import DEFAULT_CONFIG
+from openai import OpenAI
 
 # Page configuration
 st.set_page_config(
@@ -115,23 +116,32 @@ st.markdown("Powered by Fireworks AI and Llama 4 models")
 with st.sidebar:
     st.header("Configuration")
     
-    # API Key input
-    api_key = st.text_input("Fireworks API Key", value=st.session_state.api_key, type="password")
-    st.session_state.api_key = api_key
-    
     # Model selection
     model_option = st.selectbox(
         "Select Model",
-        ["Llama 4 Maverick", "Llama 4 Scout", "Other (Custom)"]
+        ["Llama 4 Maverick", "Llama 4 Scout", "GPT-4o", "Other (Custom)"]
     )
     
-    if model_option == "Other (Custom)":
-        custom_model = st.text_input("Enter model name", value="llama-v3-70b-instruct")
-        model_id = f"accounts/fireworks/models/{custom_model}"
-    elif model_option == "Llama 4 Maverick":
-        model_id = "accounts/fireworks/models/llama4-maverick-instruct-basic"
-    else:  # Llama 4 Scout
-        model_id = "accounts/fireworks/models/llama4-scout-instruct-basic"
+    # Dynamic API key field based on model selection
+    if model_option == "GPT-4o":
+        api_key_label = "OpenAI API Key"
+        api_key = st.text_input(api_key_label, value=st.session_state.get("openai_api_key", ""), type="password")
+        st.session_state.openai_api_key = api_key
+        model_id = "gpt-4o" # OpenAI model name
+        model_provider = "openai"
+    else:
+        api_key_label = "Fireworks API Key"
+        api_key = st.text_input(api_key_label, value=st.session_state.get("fireworks_api_key", ""), type="password")
+        st.session_state.fireworks_api_key = api_key
+        model_provider = "fireworks"
+        
+        if model_option == "Other (Custom)":
+            custom_model = st.text_input("Enter model name", value="llama-v3-70b-instruct")
+            model_id = f"accounts/fireworks/models/{custom_model}"
+        elif model_option == "Llama 4 Maverick":
+            model_id = "accounts/fireworks/models/llama4-maverick-instruct-basic"
+        else:  # Llama 4 Scout
+            model_id = "accounts/fireworks/models/llama4-scout-instruct-basic"
     
     st.markdown(f"**Selected model:** `{model_id}`")
     
@@ -175,7 +185,7 @@ current_step_placeholder = st.empty()
 start_button = st.button("Start Research", disabled=(not api_key or not query))
 
 # Define the research process
-async def run_research(query, model_id, depth, breadth):
+async def run_research(query, model_id, depth, breadth, model_provider):
     # Reset state
     st.session_state.research_complete = False
     st.session_state.report = ""
@@ -186,7 +196,12 @@ async def run_research(query, model_id, depth, breadth):
     
     # Update config with API key
     config = DEFAULT_CONFIG.copy()
-    config["fireworks_api_key"] = api_key
+    config["provider"] = model_provider
+    
+    if model_provider == "openai":
+        config["openai_api_key"] = st.session_state.openai_api_key
+    else:
+        config["fireworks_api_key"] = st.session_state.fireworks_api_key
     
     # Add progress update and update the current step display
     def add_progress(message, detail=None):
@@ -458,7 +473,7 @@ if start_button:
             unsafe_allow_html=True
         )
         # Run the async function without using st.spinner
-        asyncio.run(run_research(query, model_id, depth, breadth))
+        asyncio.run(run_research(query, model_id, depth, breadth, model_provider))
 
 # Display collapsible progress history
 if st.session_state.progress:
